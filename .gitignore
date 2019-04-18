@@ -1,0 +1,4 @@
+/target
+/.idea
+/project/target
+/src/main/scala/dl4j_nn/Main_Ready.scala
