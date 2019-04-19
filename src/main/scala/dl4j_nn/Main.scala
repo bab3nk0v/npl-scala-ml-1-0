@@ -6,9 +6,10 @@ import dl4j_helpers.PlotUtil
 import org.datavec.api.records.reader.impl.csv.CSVRecordReader
 import org.datavec.api.split.FileSplit
 import org.deeplearning4j.datasets.datavec.RecordReaderDataSetIterator
-import org.deeplearning4j.nn.conf.NeuralNetConfiguration
+import org.deeplearning4j.nn.conf.{MultiLayerConfiguration, NeuralNetConfiguration}
 import org.deeplearning4j.nn.conf.layers.{DenseLayer, OutputLayer}
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork
+import org.deeplearning4j.nn.weights.WeightInit
 import org.deeplearning4j.optimize.listeners.ScoreIterationListener
 import org.deeplearning4j.ui.api.UIServer
 import org.deeplearning4j.ui.stats.StatsListener
@@ -56,9 +57,53 @@ object Main {
     var testIter = new RecordReaderDataSetIterator(rrTest, batchSize, 0, 1)
 
 
+    log.info("Building model...")
+    val conf: MultiLayerConfiguration = new NeuralNetConfiguration.Builder().seed(seed)
+      .weightInit(WeightInit.XAVIER)
+      .updater(new Nadam(learningRate)).list
+      .layer(
+        new DenseLayer.Builder()
+          .nIn(numInputs)
+          .nOut(numHiddenNodes)
+          .activation(Activation.RELU)
+          .build
+      ).layer(
+      new OutputLayer.Builder(LossFunction.XENT)
+        .nIn(numHiddenNodes)
+        .nOut(numOutputs)
+        .activation(Activation.SIGMOID)
+        .build
+    ).build
 
+    val model: MultiLayerNetwork = new MultiLayerNetwork(conf)
+    model.init()
+
+    val uiServer: UIServer = UIServer.getInstance
+    val statsStorage = new InMemoryStatsStorage
+    uiServer.attach(statsStorage)
+
+    model.setListeners(new ScoreIterationListener(100), new StatsListener(statsStorage)) //Print score every 100 parameter updates
+
+
+    for(_ <- 1 to nEpochs){
+      model.fit(trainIter)
+    }
+
+    log.info("Evaluating model...")
+
+    val eval = new Evaluation(numOutputs)
+    while (testIter.hasNext) {
+      val t = testIter.next
+      val features = t.getFeatures
+      val labels = t.getLabels
+      val predicted = model.output(features, false)
+      eval.eval(labels, predicted)
+    }
+
+    println(eval.stats)
 
     plotResults(filenameTrain, filenameTest, model, batchSize)
+
 
   }
 
